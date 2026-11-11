@@ -1,6 +1,10 @@
-# Deno Examples: Hello, World!
+# Turbofan 3D Simulation
 
-Simply serving a single file over HTTP
+An interactive 3D cutaway of a two-spool turbofan jet engine, built with three.js and served as a single
+`index.html` by Deno. Start the engine, move the thrust lever and watch fan, compressor, combustor and
+turbines respond; click a label for details on each section.
+
+Run it locally with `deno task dev` and open http://localhost:8000.
 
 ## Get your own copy to explore
 

@@ -1,80 +1,687 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hello, Deno</title>
-  <link rel="preload" href="https://demo-styles.deno.deno.net/fonts/Moranga-Regular.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="https://demo-styles.deno.deno.net/fonts/Moranga-Medium.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="https://demo-styles.deno.deno.net/fonts/Recursive_Variable.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="https://demo-styles.deno.deno.net/styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Turbofan – 3D-Simulation</title>
   <style>
-    img {
-      display: inline-block;
-      vertical-align: middle;
+    :root {
+      --bg: #070b12;
+      --panel: rgba(13, 20, 32, 0.72);
+      --line: rgba(140, 170, 210, 0.18);
+      --text: #e6edf7;
+      --muted: #8a9bb4;
+      --accent: #ffb347;
+      --cool: #5cc8ff;
+      --hot: #ff5a3c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+    .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    header { position: fixed; top: 16px; left: 16px; pointer-events: none; }
+    header h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .02em; }
+    header p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+
+    #gauges { top: 16px; right: 16px; width: 232px; padding: 12px 14px; }
+    #status { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--muted);
+      margin-bottom: 10px; }
+    #status i { width: 8px; height: 8px; border-radius: 50%; background: #445; }
+    #status.on i { background: #4ade80; box-shadow: 0 0 10px #4ade80; }
+    #status.busy i { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .g { margin-top: 8px; }
+    .g .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--muted); }
+    .g .row b { font: 600 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); }
+    .g .row small { font-size: 10px; color: var(--muted); margin-left: 4px; font-weight: 400; }
+    .bar { height: 5px; margin-top: 4px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+    .bar span { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--cool); }
+    .bar.warm span { background: linear-gradient(90deg, var(--accent), var(--hot)); }
+
+    #controls { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 12px 14px; display: flex;
+      align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); }
+    button { font: inherit; color: var(--text); cursor: pointer; border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .06); border-radius: 9px; padding: 8px 12px; font-size: 13px; }
+    button:hover { background: rgba(255, 255, 255, .12); }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--cool); outline-offset: 2px; }
+    #power { background: var(--accent); color: #1b1203; border-color: transparent; font-weight: 650; min-width: 132px; }
+    #power.running { background: rgba(255, 90, 60, .18); color: #ffb4a6; border-color: rgba(255, 90, 60, .5); }
+    .throttle { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+    .throttle output { font: 600 13px ui-monospace, Menlo, Consolas, monospace; color: var(--text); width: 44px; text-align: right; }
+    input[type=range] { width: 190px; accent-color: var(--accent); }
+    .toggles { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+    .toggles button { padding: 7px 10px; font-size: 12px; color: var(--muted); }
+    .toggles button[aria-pressed=true] { color: var(--text); border-color: rgba(92, 200, 255, .55); background: rgba(92, 200, 255, .14); }
+
+    #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    .label { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center;
+      will-change: transform; }
+    .label button { pointer-events: auto; padding: 4px 9px; font-size: 11px; border-radius: 999px; white-space: nowrap;
+      background: rgba(10, 16, 26, .8); }
+    .label button:hover, .label.active button { border-color: var(--accent); color: var(--accent); }
+    .label.active { z-index: 2; }
+    .label .ln { width: 1px; background: linear-gradient(rgba(255, 255, 255, .55), rgba(255, 255, 255, .15)); }
+    .label .dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px #fff; }
+
+    #info { left: 16px; top: 84px; width: 300px; padding: 14px 16px; display: none; }
+    #info.show { display: block; }
+    #info h2 { margin: 0 0 6px; font-size: 15px; color: var(--accent); }
+    #info p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: #c5d0e0; }
+    #info dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px; }
+    #info dt { color: var(--muted); }
+    #info dd { margin: 0; font: 600 12px ui-monospace, Menlo, Consolas, monospace; text-align: right; }
+    #info .x { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border: 0; background: none; color: var(--muted); font-size: 16px; }
+    #info small { display: block; margin-top: 8px; font-size: 10px; color: var(--muted); }
+    #err { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+
+    @media (max-width: 760px) {
+      header p { display: none; }
+      header h1 { font-size: 15px; }
+      #gauges { top: 44px; left: 16px; right: 16px; width: auto; padding: 8px 12px; display: grid;
+        grid-template-columns: repeat(5, 1fr); gap: 0 10px; }
+      #status { grid-column: 1 / -1; margin-bottom: 0; }
+      .g { margin-top: 6px; min-width: 0; }
+      .g .row { flex-direction: column; font-size: 10px; }
+      .g .row b { font-size: 12px; }
+      .g .row small { display: none; }
+      #controls { gap: 10px; padding: 10px; width: calc(100vw - 32px); }
+      input[type=range] { width: 130px; }
+      #info { left: 16px; right: 16px; top: auto; width: auto; bottom: 190px; }
+      .label button { font-size: 10px; padding: 3px 7px; }
     }
   </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 
 <body>
-    <main>
-      <section>
-        <a href="https://deno.com/deploy">
-        </a>
-      <h1>
-        <p>
-          Hello, Deno!
-        </p>
-      </h1>
-      <p>
-        This little example is being served by <a href="https://deno.com/">Deno</a>.
-        You can run it locally or in porduction on <a href="https://deno.com/deploy">Deno Deploy</a> or other hosting platforms.
-      </p>
-      <ul>
-        <li>Run it locally with<code>deno task dev</code></li>
-        <li>Deploy it to <a href="https://deno.com/deploy">Deno Deploy</a> via the CLI by running<code>deno deploy</code></li>
-        <li>Run it locally and share it publically by running <code>deno deploy --connected</code></li>
-      </ul>
-    </section>
-      <hr>
-    <section>
-      <h2>What's next?</h2>
-      <p>
-        You can clone this example and deploy it to Deno Deploy in just a few clicks
-        <a href="https://app.deno.com/new?clone=https://github.com/denoland/examples&path=hello-world"><img src="https://deno.com/button" alt="Deploy on Deno"/></a>
-      </p>
-      <ul>
-        <li>
-          <a href="https://docs.deno.com/examples">More examples in the Deno Docs</a>
-        </li>
-        <li>
-          <a href="https://deno.com/deploy">Deno Deploy Early Access</a>
-        </li>
-      </ul>
-    </section>
-    </main>
-    <hr>
-    <footer>
-      <section>
-      <ul class="flex-btwn">
-        <li>
-          <a href="https://deno.com">BlueSky</a>
-        </li>
-        <li>
-          <a href="https://deno.com">Twitter</a>
-        </li>
-        <li>
-          <a href="https://deno.com">YouTube</a>
-        </li>
-        <li>
-          <a href="https://deno.com">Newsletter</a>
-        </li>
-        <li>
-          <a href="https://deno.com">Deno</a>
-        </li>
-      </ul>
-      </section>
-    </footer>
+  <canvas id="c"></canvas>
+  <div id="labels"></div>
+
+  <header>
+    <h1>Turbofan-Triebwerk</h1>
+    <p>Interaktive 3D-Simulation · Ziehen zum Drehen, Scrollen zum Zoomen</p>
+  </header>
+
+  <section id="gauges" class="panel" aria-label="Triebwerksinstrumente">
+    <div id="status"><i></i><span>AUS</span></div>
+    <div class="g"><div class="row"><span>N1 Fan</span><b id="v-n1">0.0<small>%</small></b></div><div class="bar"><span id="b-n1"></span></div></div>
+    <div class="g"><div class="row"><span>N2 Kern</span><b id="v-n2">0.0<small>%</small></b></div><div class="bar"><span id="b-n2"></span></div></div>
+    <div class="g"><div class="row"><span>EGT</span><b id="v-egt">15<small>°C</small></b></div><div class="bar warm"><span id="b-egt"></span></div></div>
+    <div class="g"><div class="row"><span>Schub</span><b id="v-thr">0.0<small>kN</small></b></div><div class="bar"><span id="b-thr"></span></div></div>
+    <div class="g"><div class="row"><span>Kraftstoff</span><b id="v-ff">0<small>kg/h</small></b></div><div class="bar warm"><span id="b-ff"></span></div></div>
+  </section>
+
+  <section id="info" class="panel" aria-live="polite">
+    <button class="x" aria-label="Schließen">×</button>
+    <h2></h2>
+    <p></p>
+    <dl></dl>
+    <small>Vereinfachte Modellwerte, kein reales Triebwerksmuster.</small>
+  </section>
+
+  <section id="controls" class="panel" aria-label="Steuerung">
+    <button id="power">Triebwerk starten</button>
+    <label class="throttle">Schubhebel
+      <input id="throttle" type="range" min="0" max="100" value="35">
+      <output id="throttle-out">35 %</output>
+    </label>
+    <div class="toggles">
+      <button data-t="cut" aria-pressed="true">Schnitt</button>
+      <button data-t="flow" aria-pressed="true">Strömung</button>
+      <button data-t="labels" aria-pressed="true">Beschriftung</button>
+      <button data-t="spin" aria-pressed="false">Auto-Drehung</button>
+      <button data-t="sound" aria-pressed="false">Ton</button>
+    </div>
+  </section>
+
+  <div id="err">Die 3D-Ansicht konnte nicht geladen werden (WebGL oder Netzwerk nicht verfügbar).</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    const $ = (q) => document.querySelector(q);
+    const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+    const TAU = Math.PI * 2;
+
+    // ---------- Renderer, Szene, Kamera ----------
+    const canvas = $('#c');
+    const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.localClippingEnabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b12);
+    scene.fog = new THREE.Fog(0x070b12, 14, 38);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.4;
+
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.target.set(0.25, -0.1, 0);
+    controls.minDistance = 2.5;
+    controls.maxDistance = 16;
+    controls.maxPolarAngle = Math.PI * 0.56;
+    controls.autoRotateSpeed = 0.7;
+    {
+      const k = Math.max(1, 1.25 / (innerWidth / innerHeight));
+      camera.position.set(-4.3 * k, 2.1 * k, 5.4 * k);
+    }
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
+    key.position.set(-3, 6, 5);
+    const fill = new THREE.DirectionalLight(0x6fa8ff, 0.5);
+    fill.position.set(5, 2, -6);
+    scene.add(key, fill);
+
+    // ---------- Schnittebenen (Keil-Ausschnitt) ----------
+    const planeA = new THREE.Plane(), planeB = new THREE.Plane();
+    const clipPlanes = [planeA, planeB];
+    const CUT0 = THREE.MathUtils.degToRad(-28), CUT_SPAN = THREE.MathUtils.degToRad(125);
+    function setCut(open) {
+      const a = CUT0, b = CUT0 + CUT_SPAN * open;
+      planeA.normal.set(0, -Math.cos(a), Math.sin(a));
+      planeB.normal.set(0, Math.cos(b), -Math.sin(b));
+    }
+    const cut = (m) => { m.clippingPlanes = clipPlanes; m.clipIntersection = true; m.side = THREE.DoubleSide; return m; };
+
+    // ---------- Materialien ----------
+    const M = {
+      paint: cut(new THREE.MeshPhysicalMaterial({ color: 0xb9c2cc, roughness: 0.42, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.15 })),
+      lip: cut(new THREE.MeshStandardMaterial({ color: 0xd8dde4, roughness: 0.24, metalness: 1 })),
+      cowl: cut(new THREE.MeshStandardMaterial({ color: 0x39424f, roughness: 0.42, metalness: 0.85 })),
+      vane: cut(new THREE.MeshStandardMaterial({ color: 0x7c8794, roughness: 0.4, metalness: 0.9 })),
+      hotVane: cut(new THREE.MeshStandardMaterial({ color: 0x6b5a4c, roughness: 0.5, metalness: 0.85, emissive: 0xff4a12, emissiveIntensity: 0 })),
+      liner: cut(new THREE.MeshStandardMaterial({ color: 0x4a3a30, roughness: 0.6, metalness: 0.7, emissive: 0xff6a1a, emissiveIntensity: 0 })),
+      fan: new THREE.MeshStandardMaterial({ color: 0x2c3440, roughness: 0.3, metalness: 0.95 }),
+      spinner: new THREE.MeshStandardMaterial({ color: 0x8e99a6, roughness: 0.25, metalness: 1 }),
+      comp: new THREE.MeshStandardMaterial({ color: 0x8fa3b8, roughness: 0.32, metalness: 0.95 }),
+      drum: new THREE.MeshStandardMaterial({ color: 0x4b5665, roughness: 0.45, metalness: 0.9 }),
+      turb: new THREE.MeshStandardMaterial({ color: 0x8a6f58, roughness: 0.42, metalness: 0.9, emissive: 0xff4a12, emissiveIntensity: 0 }),
+      hotDrum: new THREE.MeshStandardMaterial({ color: 0x55463c, roughness: 0.5, metalness: 0.85, emissive: 0xff4a12, emissiveIntensity: 0 }),
+      stand: new THREE.MeshStandardMaterial({ color: 0x1c2430, roughness: 0.6, metalness: 0.7 }),
+    };
+
+    // ---------- Strömungskanal-Tabellen: [s, Nabe, Gehäuse] ----------
+    function lut(rows) {
+      const n = rows[0].length - 1;
+      return (s, out) => {
+        let i = 1;
+        while (i < rows.length - 1 && s > rows[i][0]) i++;
+        const A = rows[i - 1], B = rows[i], t = clamp((s - A[0]) / (B[0] - A[0]));
+        for (let k = 0; k < n; k++) out[k] = A[k + 1] + (B[k + 1] - A[k + 1]) * t;
+        return out;
+      };
+    }
+    const CORE = [
+      [-3.4, 0, 0.64], [-2.0, 0, 0.56], [-1.6, 0.28, 0.55], [-1.2, 0.34, 0.54], [-0.7, 0.30, 0.52], [-0.6, 0.25, 0.50],
+      [0.25, 0.36, 0.43], [0.35, 0.31, 0.46], [0.85, 0.31, 0.46], [0.95, 0.33, 0.47], [1.15, 0.31, 0.48],
+      [1.75, 0.30, 0.60], [2.15, 0.24, 0.46], [2.6, 0, 0.42], [5.6, 0, 0.58],
+    ];
+    const BYPASS = [
+      [-3.4, 0.68, 1.22], [-2.0, 0.6, 1.0], [-1.6, 0.57, 0.99], [-1.2, 0.58, 1.0], [-0.5, 0.67, 1.03],
+      [0.5, 0.69, 0.98], [2.2, 0.52, 0.95], [5.6, 0.62, 1.08],
+    ];
+    const corePath = lut(CORE), bypassPath = lut(BYPASS);
+    const tmp2 = [0, 0];
+
+    // ---------- Triebwerk: lokale Achse = y, wird auf Welt-x gedreht ----------
+    const engine = new THREE.Group();
+    engine.rotation.z = -Math.PI / 2;
+    scene.add(engine);
+    const spool1 = new THREE.Group(), spool2 = new THREE.Group();
+    engine.add(spool1, spool2);
+
+    const V = (r, s) => new THREE.Vector2(r, s);
+    const spline = (pts, n = 64) => new THREE.SplineCurve(pts.map((p) => V(p[0], p[1]))).getPoints(n);
+    const lathe = (pts, mat, parent = engine) => {
+      const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 120), mat);
+      parent.add(m);
+      return m;
+    };
+
+    // Gondel (Einlauf + Fan-Verkleidung): innen nach vorn, um die Lippe, außen zurück
+    {
+      const pts = spline([
+        [1.0, 0.5], [1.03, -0.5], [1.005, -1.2], [1.0, -1.6], [1.01, -1.95], [1.035, -2.08], [1.08, -2.15],
+        [1.13, -2.12], [1.18, -2.0], [1.24, -1.7], [1.27, -1.0], [1.2, -0.2], [1.035, 0.5],
+      ], 110);
+      pts.push(pts[0].clone());
+      const a = pts.findIndex((p) => p.y < -1.97);
+      const b = pts.findLastIndex((p) => p.y < -1.97);
+      lathe(pts.slice(0, a + 1), M.paint);
+      lathe(pts.slice(a, b + 1), M.lip);
+      lathe(pts.slice(b), M.paint);
+    }
+    // Kerntriebwerks-Verkleidung: außen (Nebenstrom-Innenwand) + innen (Kern-Gehäuse)
+    {
+      const outer = spline([[0.555, -1.22], [0.6, -1.0], [0.67, -0.5], [0.69, 0.3], [0.67, 1.2], [0.63, 1.75], [0.475, 2.15]], 60);
+      const inner = CORE.filter((r) => r[0] >= -1.2 && r[0] <= 2.15).reverse().map((r) => V(r[2], r[0]));
+      lathe([...outer, ...inner, outer[0].clone()], M.cowl);
+    }
+    // Rotierende Naben und Wellen
+    lathe([[0, -1.99], [0.06, -1.96], [0.15, -1.86], [0.23, -1.72], [0.28, -1.6]].map((p) => V(p[0], p[1])), M.spinner, spool1);
+    lathe([[0.28, -1.6], [0.3, -1.45], [0.34, -1.2], [0.3, -0.7], [0.06, -0.68]].map((p) => V(p[0], p[1])), M.drum, spool1);
+    lathe([[0.06, -0.62], [0.25, -0.6], [0.36, 0.25], [0.31, 0.35]].map((p) => V(p[0], p[1])), M.drum, spool2);
+    lathe([[0.31, 0.35], [0.31, 0.85], [0.33, 0.95], [0.31, 1.15], [0.06, 1.17]].map((p) => V(p[0], p[1])), M.hotDrum, spool2);
+    lathe([[0.06, 1.19], [0.31, 1.2], [0.3, 1.75], [0.06, 1.78]].map((p) => V(p[0], p[1])), M.hotDrum, spool1);
+    lathe([[0.06, -0.7], [0.06, 1.2]].map((p) => V(p[0], p[1])), M.spinner, spool1);
+    // Abgaskonus (steht fest)
+    lathe(spline([[0.3, 1.8], [0.28, 1.95], [0.22, 2.2], [0.1, 2.48], [0, 2.62]], 30), M.hotDrum);
+
+    // Schaufel: radial = x, axial = y, Umfang = z
+    function bladeGeo(r0, r1, chord, thick, tw0, tw1, camber = 0.12, taper = 0.8) {
+      const span = r1 - r0;
+      const g = new THREE.BoxGeometry(span, chord, thick, 8, 6, 1);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const t = p.getX(i) / span + 0.5, u = p.getY(i) / (chord / 2);
+        const y = p.getY(i) * (1 - (1 - taper) * t);
+        const z = p.getZ(i) * (1 - 0.88 * u * u) + camber * chord * (1 - u * u);
+        const a = tw0 + (tw1 - tw0) * t, c = Math.cos(a), s = Math.sin(a);
+        p.setXYZ(i, r0 + t * span, y * c - z * s, y * s + z * c);
+      }
+      g.computeVertexNormals();
+      return g;
+    }
+    const mat4 = new THREE.Matrix4();
+    function stage({ s, n, chord, tw = [0.5, 0.9], mat, parent = engine, path = corePath, rotor = true, r, thick, camber }) {
+      const [hub, tip] = r || path(s, tmp2);
+      const g = bladeGeo(hub - 0.012, rotor ? tip - 0.007 : tip + 0.006, chord, thick || chord * 0.14, tw[0], tw[1], camber);
+      const im = new THREE.InstancedMesh(g, mat, n);
+      for (let k = 0; k < n; k++) im.setMatrixAt(k, mat4.makeRotationY((k / n) * TAU));
+      im.position.y = s;
+      parent.add(im);
+      return im;
+    }
+    // Fan + Leitschaufeln im Nebenstrom
+    stage({ s: -1.44, n: 20, chord: 0.36, tw: [0.45, 1.12], mat: M.fan, parent: spool1, r: [0.3, 1.0], thick: 0.035, camber: 0.07 });
+    stage({ s: -0.78, n: 40, chord: 0.2, tw: [-0.35, -0.2], mat: M.vane, rotor: false, path: bypassPath, thick: 0.014, camber: -0.1 });
+    // Niederdruckverdichter (Booster, N1)
+    for (let i = 0; i < 3; i++) {
+      stage({ s: -1.13 + i * 0.14, n: 38, chord: 0.055, tw: [0.5, 0.8], mat: M.comp, parent: spool1 });
+      stage({ s: -1.06 + i * 0.14, n: 44, chord: 0.045, tw: [-0.5, -0.6], mat: M.vane, rotor: false, camber: -0.12 });
+    }
+    // Hochdruckverdichter (N2)
+    for (let i = 0; i < 8; i++) {
+      const s = -0.55 + i * 0.1;
+      stage({ s, n: 34 + i * 2, chord: 0.05 - i * 0.002, tw: [0.55, 0.9], mat: M.comp, parent: spool2 });
+      stage({ s: s + 0.05, n: 40 + i * 2, chord: 0.036, tw: [-0.5, -0.6], mat: M.vane, rotor: false, camber: -0.12 });
+    }
+    // Hochdruckturbine (N2) und Niederdruckturbine (N1)
+    for (let i = 0; i < 2; i++) {
+      stage({ s: 0.9 + i * 0.12, n: 36, chord: 0.05, tw: [0.9, 1.0], mat: M.hotVane, rotor: false, camber: 0.2 });
+      stage({ s: 0.96 + i * 0.12, n: 46, chord: 0.05, tw: [-0.6, -0.9], mat: M.turb, parent: spool2, camber: -0.22 });
+    }
+    for (let i = 0; i < 4; i++) {
+      stage({ s: 1.24 + i * 0.135, n: 44, chord: 0.055, tw: [0.8, 0.95], mat: M.hotVane, rotor: false, camber: 0.2 });
+      stage({ s: 1.31 + i * 0.135, n: 52, chord: 0.055, tw: [-0.5, -0.85], mat: M.turb, parent: spool1, camber: -0.22 });
+    }
+    // Hinterer Turbinenrahmen
+    stage({ s: 1.9, n: 10, chord: 0.16, tw: [0, 0], mat: M.hotVane, rotor: false, r: [0.29, 0.54], thick: 0.022, camber: 0 });
+
+    // ---------- Brennkammer ----------
+    lathe(spline([[0.335, 0.37], [0.325, 0.6], [0.33, 0.86]], 16), M.liner);
+    lathe(spline([[0.4, 0.34], [0.445, 0.42], [0.45, 0.62], [0.445, 0.86]], 20), M.liner);
+    const NOZ = 18;
+    {
+      const g = new THREE.CylinderGeometry(0.012, 0.018, 0.1, 8);
+      const im = new THREE.InstancedMesh(g, M.vane, NOZ);
+      for (let k = 0; k < NOZ; k++) {
+        const a = (k / NOZ) * TAU;
+        im.setMatrixAt(k, mat4.makeTranslation(0.385 * Math.cos(a), 0.34, -0.385 * Math.sin(a)));
+      }
+      engine.add(im);
+    }
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const flames = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 10), flameMat, NOZ);
+    engine.add(flames);
+    const flameLight = new THREE.PointLight(0xff7a2a, 0, 4, 1.6);
+    flameLight.position.set(0.6, 0.55, 0.75);
+    scene.add(flameLight);
+
+    // ---------- Abgasstrahl ----------
+    const plumeMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uPower: { value: 0 } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main(){ vUv=uv; vec4 mv=modelViewMatrix*vec4(position,1.); vN=normalMatrix*normal; vV=-mv.xyz; gl_Position=projectionMatrix*mv; }`,
+      fragmentShader: `uniform float uTime,uPower; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main(){ float f=pow(abs(dot(normalize(vN),normalize(vV))),2.2);
+          float w=.8+.2*sin(vUv.y*34.-uTime*26.)*sin(vUv.x*25.+uTime*3.);
+          float a=f*pow(1.-vUv.y,1.7)*smoothstep(0.,.04,vUv.y)*w*uPower;
+          gl_FragColor=vec4(mix(vec3(1.,.5,.16),vec3(.35,.45,1.),vUv.y)*a,1.); }`,
+    });
+    const plume = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.45, 3.4, 48, 1, true), plumeMat);
+    plume.position.y = 2.15 + 1.7;
+    engine.add(plume);
+
+    // ---------- Prüfstand und Boden ----------
+    {
+      const GY = -1.82;
+      for (const [x, R] of [[-1.3, 1.285], [-0.2, 1.22]]) {
+        const arc = 1.7;
+        const saddle = new THREE.Mesh(new THREE.TorusGeometry(R, 0.05, 10, 40, arc), M.stand);
+        saddle.rotation.set(0, Math.PI / 2, -(Math.PI / 2 + arc / 2));
+        saddle.position.x = x;
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, -GY - R + 0.02, 0.5), M.stand);
+        post.position.set(x, (GY - R) / 2, 0);
+        scene.add(saddle, post);
+      }
+      const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 1.5), M.stand);
+      base.position.set(-0.75, GY + 0.05, 0);
+      scene.add(base);
+
+      const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.MeshStandardMaterial({ color: 0x0b111b, roughness: 0.75, metalness: 0.3 }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = GY;
+      const grid = new THREE.GridHelper(60, 60, 0x2a3b55, 0x16202f);
+      grid.position.y = GY + 0.002;
+      grid.material.transparent = true;
+      grid.material.opacity = 0.55;
+      scene.add(floor, grid);
+    }
+
+    // ---------- Strömungspartikel ----------
+    const NP = Math.min(innerWidth, innerHeight) < 600 ? 5000 : 9000;
+    const pPos = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3), pSize = new Float32Array(NP);
+    const pS = new Float32Array(NP), pU = new Float32Array(NP), pPhi = new Float32Array(NP), pCore = new Uint8Array(NP);
+    for (let i = 0; i < NP; i++) {
+      pCore[i] = i % 5 < 2 ? 1 : 0;
+      pS[i] = -3.4 + Math.random() * 9;
+      pU[i] = Math.random();
+      pPhi[i] = Math.random() * TAU;
+      pSize[i] = 0.012 + Math.random() * 0.018;
+    }
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('aColor', new THREE.BufferAttribute(pCol, 3));
+    pGeo.setAttribute('aSize', new THREE.BufferAttribute(pSize, 1));
+    const pMat = new THREE.ShaderMaterial({
+      uniforms: { uScale: { value: 1 } },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `attribute vec3 aColor; attribute float aSize; uniform float uScale; varying vec3 vC;
+        void main(){ vC=aColor; vec4 mv=modelViewMatrix*vec4(position,1.); gl_PointSize=aSize*uScale/-mv.z; gl_Position=projectionMatrix*mv; }`,
+      fragmentShader: `varying vec3 vC; void main(){ float a=smoothstep(.5,0.,length(gl_PointCoord-.5)); gl_FragColor=vec4(vC*a*a,1.); }`,
+    });
+    const particles = new THREE.Points(pGeo, pMat);
+    particles.frustumCulled = false;
+    engine.add(particles);
+
+    const coreVel = lut([[-3.4, 1], [-1.5, 1], [-0.6, 0.8], [0.3, 0.5], [0.85, 0.7], [1.2, 1.4], [2.15, 2.3], [5.6, 2.7]]);
+    const bypVel = lut([[-3.4, 1], [-1.45, 1], [-1.0, 1.4], [0.5, 1.7], [5.6, 1.5]]);
+    const coldRamp = lut([[-3.4, 0, 0, 0], [-2.4, 0.1, 0.22, 0.45], [-1.3, 0.2, 0.44, 0.9], [0.25, 0.5, 0.8, 1.1], [2.2, 0.25, 0.5, 0.9], [5.2, 0, 0, 0]]);
+    const hotRamp = lut([[-3.4, 0, 0, 0], [-2.4, 0.1, 0.22, 0.45], [-1.3, 0.2, 0.44, 0.9], [0.25, 0.6, 0.9, 1.1], [0.42, 1.8, 1.2, 0.45],
+      [0.75, 1.8, 0.75, 0.16], [1.2, 1.5, 0.5, 0.1], [2.2, 1.2, 0.34, 0.07], [5.4, 0, 0, 0]]);
+    const bypRamp = lut([[-3.4, 0, 0, 0], [-2.4, 0.07, 0.17, 0.36], [-1.3, 0.14, 0.34, 0.75], [0.5, 0.16, 0.4, 0.8], [4.2, 0, 0, 0]]);
+    const tA = [0, 0, 0], tB = [0, 0, 0], tV = [0];
+
+    function updateParticles(dt, flow, burn) {
+      const vis = clamp(flow * 2.2);
+      for (let i = 0; i < NP; i++) {
+        const core = pCore[i];
+        let s = pS[i] + (core ? coreVel : bypVel)(pS[i], tV)[0] * flow * 1.25 * dt;
+        if (s > 5.6) { s = -3.4; pU[i] = Math.random(); pPhi[i] = Math.random() * TAU; }
+        pS[i] = s;
+        const [a, b] = (core ? corePath : bypassPath)(s, tmp2);
+        const r = a + (b - a) * pU[i];
+        pPhi[i] += (s > -1.4 && s < 2.2 ? 0.5 : 0.08) * flow * dt;
+        const j = i * 3;
+        pPos[j] = r * Math.sin(pPhi[i]); pPos[j + 1] = s; pPos[j + 2] = r * Math.cos(pPhi[i]);
+        if (core) {
+          coldRamp(s, tA); hotRamp(s, tB);
+          for (let k = 0; k < 3; k++) pCol[j + k] = (tA[k] + (tB[k] - tA[k]) * burn) * vis;
+        } else {
+          bypRamp(s, tA);
+          for (let k = 0; k < 3; k++) pCol[j + k] = tA[k] * vis * 0.7;
+        }
+      }
+      pGeo.attributes.position.needsUpdate = true;
+      pGeo.attributes.aColor.needsUpdate = true;
+    }
+
+    // ---------- Nachbearbeitung (Bloom) ----------
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(renderer, target);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.6, 1.25);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+
+    function resize() {
+      const w = innerWidth, h = innerHeight;
+      renderer.setSize(w, h, false);
+      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      pMat.uniforms.uScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+    }
+    addEventListener('resize', resize);
+    resize();
+
+    // ---------- Triebwerksmodell (vereinfachte Zwei-Wellen-Dynamik) ----------
+    const sim = { phase: 'off', n1: 0, n2: 0, egt: 15, ff: 0, burn: 0, throttle: 0.35, thrust: 0, ang1: 0, ang2: 0 };
+    function stepSim(dt) {
+      let tgt = 0, tau = 7;
+      if (sim.phase === 'start') { tgt = 0.27; tau = 1.6; if (sim.n2 > 0.2) sim.phase = 'run'; }
+      if (sim.phase === 'run') { tgt = 0.6 + 0.4 * sim.throttle; tau = sim.n2 < 0.58 ? 2.6 : 1.2; }
+      const lit = sim.phase === 'run';
+      sim.n2 += clamp((tgt - sim.n2) / tau, -0.2, 0.2) * dt;
+      const n1t = Math.pow(clamp((sim.n2 - 0.15) / 0.85), 2.1);
+      sim.n1 += (n1t - sim.n1) * Math.min(1, dt / 1.1);
+      const accel = Math.max(0, tgt - sim.n2);
+      const ffT = lit ? 0.07 + 0.93 * Math.pow(clamp((sim.n2 - 0.2) / 0.8), 2.4) + accel * 0.5 : 0;
+      sim.ff += (ffT - sim.ff) * Math.min(1, dt / 0.4);
+      sim.burn += ((lit ? 1 : 0) - sim.burn) * Math.min(1, dt / (lit ? 0.7 : 1.6));
+      const egtT = lit
+        ? 420 + 480 * Math.pow(clamp((sim.n2 - 0.6) / 0.4), 1.3) + 500 * accel + 180 * clamp((0.55 - sim.n2) / 0.35)
+        : 15 + 60 * sim.n2;
+      sim.egt += (egtT - sim.egt) * Math.min(1, dt / (egtT > sim.egt ? 1.0 : 5));
+      sim.thrust = 121 * Math.pow(sim.n1, 2.6);
+      sim.ang1 += Math.pow(sim.n1, 0.75) * 9 * dt;
+      sim.ang2 += Math.pow(sim.n2, 0.75) * 15 * dt;
+    }
+    const derived = () => {
+      const opr = 1 + 29 * Math.pow(sim.n2, 2.6);
+      const t3 = 288 * Math.pow(opr, 0.3) - 273;
+      const t4 = t3 + sim.burn * (420 + 900 * Math.pow(clamp(sim.ff), 0.6));
+      return { opr, t3, t4, fpr: 1 + 0.65 * sim.n1 * sim.n1 };
+    };
+
+    // ---------- Beschriftungen und Info-Karte ----------
+    const de = (v, d = 0) => v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const PARTS = [
+      { name: 'Fan', s: -1.44, r: 0.82, h: 90,
+        text: 'Der große Bläser saugt die Luft an und beschleunigt sie. Der größte Teil strömt außen am Kern vorbei und erzeugt den Hauptteil des Schubs.',
+        live: (d) => [['Drehzahl N1', de(sim.n1 * 5175) + ' 1/min'], ['Druckverhältnis', de(d.fpr, 2)]] },
+      { name: 'Nebenstromkanal', s: -0.15, r: 0.86, h: 60,
+        text: 'Die kalte Luft des Nebenstroms umhüllt das Kerntriebwerk. Sie liefert Schub bei geringer Strahlgeschwindigkeit – leise und sparsam.',
+        live: () => [['Nebenstromverhältnis', '≈ 5,5 : 1'], ['Schubanteil', '≈ 80 %']] },
+      { name: 'Niederdruckverdichter', s: -0.99, r: 0.44, h: 180,
+        text: 'Der Booster sitzt auf der Fan-Welle und verdichtet die Kernluft vor, bevor sie in den Hochdruckverdichter gelangt.',
+        live: (d) => [['Druck', de(d.fpr * (1 + 1.1 * sim.n1 * sim.n1), 2) + ' bar']] },
+      { name: 'Hochdruckverdichter', s: -0.2, r: 0.41, h: 150,
+        text: 'Rotierende Laufschaufeln und feste Leitschaufeln pressen die Luft Stufe für Stufe zusammen. Dabei wird sie mehrere hundert Grad heiß.',
+        live: (d) => [['Gesamtdruckverhältnis', de(d.opr, 1)], ['Austrittstemperatur', de(d.t3) + ' °C']] },
+      { name: 'Brennkammer', s: 0.6, r: 0.42, h: 90,
+        text: 'In der Ringbrennkammer wird Kerosin eingespritzt und kontinuierlich verbrannt. Das heiße Gas dehnt sich stark aus.',
+        live: (d) => [['Gastemperatur', de(d.t4) + ' °C'], ['Kraftstoff', de(sim.ff * 3600) + ' kg/h']] },
+      { name: 'Hochdruckturbine', s: 1.02, r: 0.44, h: 180,
+        text: 'Die Hochdruckturbine entzieht dem Heißgas Energie und treibt über die äußere Welle den Hochdruckverdichter an.',
+        live: (d) => [['Drehzahl N2', de(sim.n2 * 14460) + ' 1/min'], ['Eintrittstemperatur', de(d.t4) + ' °C']] },
+      { name: 'Niederdruckturbine', s: 1.5, r: 0.5, h: 150,
+        text: 'Die Niederdruckturbine treibt über die innere Welle den Fan und den Booster an.',
+        live: () => [['Abgastemperatur (EGT)', de(sim.egt) + ' °C']] },
+      { name: 'Schubdüse', s: 2.2, r: 0.4, h: 120,
+        text: 'In der Düse wird das Abgas beschleunigt. Heißer Kernstrahl und kalter Nebenstrom ergeben zusammen den Schub.',
+        live: () => [['Schub', de(sim.thrust, 1) + ' kN'], ['Strahlgeschwindigkeit', de(sim.burn * (90 + 360 * sim.n1)) + ' m/s']] },
+    ];
+    const labelBox = $('#labels'), info = $('#info');
+    const LA = THREE.MathUtils.degToRad(34);
+    let activePart = null;
+    for (const p of PARTS) {
+      p.pos = new THREE.Vector3(p.s, p.r * Math.sin(LA), p.r * Math.cos(LA));
+      p.el = document.createElement('div');
+      p.el.className = 'label';
+      p.el.innerHTML = `<button type="button">${p.name}</button><span class="ln" style="height:${p.h}px"></span><span class="dot"></span>`;
+      p.el.firstChild.addEventListener('click', () => selectPart(activePart === p ? null : p));
+      labelBox.append(p.el);
+    }
+    function selectPart(p) {
+      activePart = p;
+      for (const q of PARTS) q.el.classList.toggle('active', q === p);
+      info.classList.toggle('show', !!p);
+      if (p) { info.querySelector('h2').textContent = p.name; info.querySelector('p').textContent = p.text; }
+    }
+    info.querySelector('.x').addEventListener('click', () => selectPart(null));
+    const proj = new THREE.Vector3();
+    function updateLabels() {
+      const w = innerWidth, h = innerHeight, small = w < 760 ? 0.78 : 1;
+      for (const p of PARTS) {
+        proj.copy(p.pos).project(camera);
+        const on = ui.labels && proj.z < 1 && Math.abs(proj.x) < 1.05;
+        p.el.style.display = on ? '' : 'none';
+        if (!on) continue;
+        p.el.lastChild.previousSibling.style.height = p.h * small + 'px';
+        p.el.style.transform = `translate(${(proj.x * 0.5 + 0.5) * w}px, ${(-proj.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
+      }
+    }
+
+    // ---------- Bedienung ----------
+    const ui = { cut: true, flow: true, labels: true, spin: false, sound: false };
+    let cutOpen = 0;
+    const powerBtn = $('#power'), thr = $('#throttle'), thrOut = $('#throttle-out');
+    powerBtn.addEventListener('click', () => {
+      if (sim.phase === 'off') sim.phase = sim.n2 > 0.2 ? 'run' : 'start';
+      else sim.phase = 'off';
+    });
+    thr.addEventListener('input', () => { sim.throttle = thr.value / 100; thrOut.textContent = thr.value + ' %'; });
+    for (const b of document.querySelectorAll('.toggles button')) {
+      b.addEventListener('click', () => {
+        const k = b.dataset.t;
+        ui[k] = !ui[k];
+        b.setAttribute('aria-pressed', ui[k]);
+        if (k === 'spin') controls.autoRotate = ui.spin;
+        if (k === 'flow') particles.visible = ui.flow;
+        if (k === 'sound') setSound(ui.sound);
+      });
+    }
+
+    // ---------- Ton (WebAudio, optional) ----------
+    let au = null;
+    function setSound(on) {
+      if (on && !au) {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.6;
+        const ng = ctx.createGain(), whine = ctx.createOscillator(), wg = ctx.createGain(), master = ctx.createGain();
+        whine.type = 'sawtooth'; ng.gain.value = 0; wg.gain.value = 0; master.gain.value = 0;
+        noise.connect(bp).connect(ng).connect(master);
+        whine.connect(wg).connect(master);
+        master.connect(ctx.destination);
+        noise.start(); whine.start();
+        au = { ctx, bp, ng, whine, wg, master };
+      }
+      if (au) { au.ctx.resume(); au.master.gain.setTargetAtTime(on ? 0.5 : 0, au.ctx.currentTime, 0.1); }
+    }
+    function updateSound() {
+      if (!au) return;
+      const t = au.ctx.currentTime;
+      au.bp.frequency.setTargetAtTime(180 + 2600 * sim.n1, t, 0.05);
+      au.ng.gain.setTargetAtTime(0.03 * sim.n2 + 0.9 * Math.pow(sim.n1, 1.4), t, 0.05);
+      au.whine.frequency.setTargetAtTime(90 + 3300 * sim.n2, t, 0.05);
+      au.wg.gain.setTargetAtTime(0.02 * sim.n2, t, 0.05);
+    }
+
+    // ---------- Instrumente ----------
+    const el = Object.fromEntries(['n1', 'n2', 'egt', 'thr', 'ff'].flatMap((k) => [['v' + k, $('#v-' + k).firstChild], ['b' + k, $('#b-' + k)]]));
+    const statusEl = $('#status'), statusTxt = statusEl.querySelector('span');
+    let hudT = 0;
+    function updateHud(dt) {
+      hudT += dt;
+      if (hudT < 0.08) return;
+      hudT = 0;
+      el.vn1.nodeValue = de(sim.n1 * 100, 1); el.bn1.style.width = clamp(sim.n1) * 100 + '%';
+      el.vn2.nodeValue = de(sim.n2 * 100, 1); el.bn2.style.width = clamp(sim.n2) * 100 + '%';
+      el.vegt.nodeValue = de(sim.egt); el.begt.style.width = clamp(sim.egt / 950) * 100 + '%';
+      el.vthr.nodeValue = de(sim.thrust, 1); el.bthr.style.width = clamp(sim.thrust / 121) * 100 + '%';
+      el.vff.nodeValue = de(sim.ff * 3600); el.bff.style.width = clamp(sim.ff) * 100 + '%';
+      const running = sim.phase !== 'off';
+      const st = sim.phase === 'start' ? 'ANLASSEN' : running ? (sim.n2 < 0.585 ? 'HOCHLAUF' : 'LÄUFT') : sim.n2 > 0.02 ? 'AUSLAUF' : 'AUS';
+      statusTxt.textContent = st;
+      statusEl.className = st === 'LÄUFT' ? 'on' : st === 'AUS' ? '' : 'busy';
+      powerBtn.textContent = running ? 'Abstellen' : 'Triebwerk starten';
+      powerBtn.classList.toggle('running', running);
+      if (activePart) {
+        info.querySelector('dl').innerHTML = activePart.live(derived()).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+      }
+    }
+
+    // ---------- Hauptschleife ----------
+    const clock = new THREE.Clock();
+    const fScale = new THREE.Vector3(), fPos = new THREE.Vector3(), fQuat = new THREE.Quaternion();
+    function frame() {
+      const dt = Math.min(clock.getDelta(), 0.05), time = clock.elapsedTime;
+      stepSim(dt);
+
+      spool1.rotation.y = sim.ang1;
+      spool2.rotation.y = sim.ang2;
+
+      cutOpen += ((ui.cut ? 1 : 0) - cutOpen) * Math.min(1, dt * 3.5);
+      setCut(cutOpen);
+
+      const heat = clamp((sim.egt - 250) / 650);
+      M.turb.emissiveIntensity = M.hotVane.emissiveIntensity = heat * heat * 1.5;
+      M.hotDrum.emissiveIntensity = heat * heat * 0.5;
+      const fire = sim.burn * (0.45 + 0.55 * clamp(sim.ff));
+      M.liner.emissiveIntensity = fire * 2.2;
+      flameMat.opacity = fire * 0.75;
+      flameLight.intensity = fire * cutOpen * 7 * (0.92 + 0.08 * Math.sin(time * 37));
+      for (let k = 0; k < NOZ; k++) {
+        const a = (k / NOZ) * TAU, fl = 0.75 + 0.25 * Math.sin(time * (23 + (k % 5) * 4) + k * 1.7), len = (0.1 + 0.12 * clamp(sim.ff)) * fl;
+        fPos.set(0.385 * Math.cos(a), 0.42 + len, -0.385 * Math.sin(a));
+        flames.setMatrixAt(k, mat4.compose(fPos, fQuat, fScale.set(0.036, len, 0.036)));
+      }
+      flames.instanceMatrix.needsUpdate = true;
+      plumeMat.uniforms.uTime.value = time;
+      plumeMat.uniforms.uPower.value = sim.burn * (0.12 + 0.75 * Math.pow(sim.n1, 1.2));
+
+      if (ui.flow) updateParticles(dt, 0.03 * sim.n2 + 1.6 * Math.pow(sim.n1, 0.6), sim.burn);
+      controls.update();
+      composer.render();
+      updateLabels();
+      updateHud(dt);
+      updateSound();
+      requestAnimationFrame(frame);
+    }
+    setCut(0);
+    requestAnimationFrame(frame);
+    setTimeout(() => { if (sim.phase === 'off' && sim.n2 === 0) sim.phase = 'start'; }, 900);
+    window.__sim = sim;
+  </script>
+  <script>
+    addEventListener('error', () => { if (!window.__sim) document.getElementById('err').style.display = 'grid'; }, true);
+  </script>
 </body>
+
 </html>
